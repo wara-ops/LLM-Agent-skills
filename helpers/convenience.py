@@ -5,9 +5,11 @@ import subprocess
 from pathlib import Path
 from inspect import cleandoc, getdoc
 
+from IPython.display import Image, display
+
 
 def default_tools() -> list:
-    return [read_file, write_file, bash]
+    return [read_file, write_file, bash, inline_image]
 
 def tool_prompt(*args) -> str:
     return cleandoc("""
@@ -78,6 +80,25 @@ def bash(command: str) -> str:
         return f"Error executing command: {e.stderr}"
     except subprocess.TimeoutExpired:
         return "Error: Command timed out"
+        
+def inline_image(path: str) -> str:
+    """
+    Render image at path.
+
+    Args:
+        path (str): Path to the image
+
+    Returns:
+        str: status message
+    """
+    print(f"    inline_image: {path}")
+    try:
+        img = Image(filename=path)
+        display(img)
+        return f"Successfully rendered {path}"
+    except:
+        return "Error: Could not render image"
+
 
 # -------------------------------------------------------------
 # Base Agent
