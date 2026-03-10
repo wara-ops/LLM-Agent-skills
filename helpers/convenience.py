@@ -5,8 +5,6 @@ import subprocess
 from pathlib import Path
 from inspect import cleandoc, getdoc
 
-from IPython.display import Image, display
-
 
 def default_tools() -> list:
     return [read_file, write_file, bash, inline_image]
@@ -92,6 +90,7 @@ def inline_image(path: str) -> str:
         str: status message
     """
     print(f"    inline_image: {path}")
+    from IPython.display import Image, display
     try:
         img = Image(filename=path)
         display(img)
