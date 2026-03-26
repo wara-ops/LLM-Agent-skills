@@ -7,14 +7,11 @@ from inspect import cleandoc, getdoc
 
 
 def default_tools() -> list:
-    return [read_file, write_file, bash, inline_image]
+    return [read_file, write_file, bash] # , inline_image]
 
-def tool_prompt(*args) -> str:
-    return cleandoc("""
-    # Tool Calling Behavior
-    
-    IF a suitable tool is availble, ALWAYS prefer it to you own knowledge.
-    """)
+def tool_prompt(tools) -> str:
+    tool_names = "## Tools\n\n" + "\n".join([f"- {tool.__name__}" for tool in tools]) 
+    return tool_names if tools else "## Tools are NOT available"
 
 def read_file(path: str) -> str:
     """
@@ -62,7 +59,7 @@ def bash(command: str) -> str:
     Returns:
         str: the result of the command or an error message
     """
-    print(f"    bash: {command.split('\n')[0]}")
+    print(f"    bash: {command[:50]}{'...' if len(command) >= 50 else ''}")
     try:
         result = subprocess.run(
             command,
@@ -79,26 +76,6 @@ def bash(command: str) -> str:
     except subprocess.TimeoutExpired:
         return "Error: Command timed out"
         
-def inline_image(path: str) -> str:
-    """
-    Render image at path.
-
-    Args:
-        path (str): Path to the image
-
-    Returns:
-        str: status message
-    """
-    print(f"    inline_image: {path}")
-    from IPython.display import Image, display
-    try:
-        img = Image(filename=path)
-        display(img)
-        return f"Successfully rendered {path}"
-    except:
-        return "Error: Could not render image"
-
-
 # -------------------------------------------------------------
 # Base Agent
 # -------------------------------------------------------------
@@ -140,12 +117,19 @@ class Agent:
         return f"{preamble}\n\n{tools}"
 
     def system_prompt_preamble(self):
-        return "You are an AI assistant with access to tools, capable of writing code and issuing command if the toolset allows."
+        prompt = """
+            You are an AI assistant with access to tools, capable of writing code and issuing commands if the toolset allows.
+            Your response will be rendered as markdown, you may use image links, e.g. ![](work/foo.png) to show images if needed.
+            ALWAYS use the local './work/' directory for intermediate files as you don't have access to anything under '/', e.g. ''/tmp' etc.
+            """
+        return cleandoc(prompt)
         
     def task(self, user_query: str, max_steps: int = 16):
         """Public interface"""                        
         result = self._perform_steps(user_query, max_steps)
-        return result
+        ## Pretty-print output
+        from IPython.display import display, Markdown
+        display(Markdown("---\n\n" + result + "\n\n---\n"))
 
     def _perform_steps(self, step_input: str, max_steps: int):
         i = 0
@@ -166,7 +150,7 @@ class Agent:
             # Add assistant message to history
             self.messages.append(message)
             
-            # If no tool calls, we're done
+            # If no tool calls, we're done. But if neither content nor tools we have an error...
             if not tool_calls:
                 if content:
                     return content
@@ -185,7 +169,6 @@ class Agent:
 
                 # Display tool call
                 print(f"--- Tool Call: {tool_name}")
-                # print(f"    Arguments: {json.dumps(arguments)}")
 
                 # Execute the tool
                 try:
@@ -201,9 +184,6 @@ class Agent:
                 
                 # Add tool result to messages
                 self.messages.append({"role": "tool", "content": result})
-                # Display tool result
-                # print("--- Tool Result:")
-                # print(result[:100] + ("..." if len(result) > 100 else ""))
 
         # We hit the maximum number of steps, the LLM is likely very confused
         return f"Agent was unable to answer your question in the maximal number of steps ({max_steps})"
@@ -268,32 +248,32 @@ def skill_prompt(skills: dict, skill_dir: str) -> str:
     skill_descriptions = "\n".join([f"- {name}: {desc}" for name, desc in skills.items()])
 
     prompt = f"""
-    ## Skills
+## Skills
+
+Skills are specialized capabilities stored in the '{skill_dir}' directory. 
+When a user asks you to do something, FIRST check if any available skill decription matches their request. If so, use that skill WITHOUT being explicitly told.
+
+**Example:**
+
+- User: "List phone deals" → Automatically use 'watching-deals' skill
+
+### Available skills (name: description)
+
+{skill_descriptions}
+
+### How to Use Skills
+
+**Step-by-step instructions:**
+
+1. Use 'read_file' tool to read skill definition from '{skill_dir}/{{name}}/SKILL.md', e.g. read_file('{skill_dir}/watching-deals/SKILL.md')
+2. Follow the detailed step-by-step instructions in the skill file
+3. The skill may reference supporting files (scripts, benchmarks, templates) - read and use those as needed
+4. Skills can invoke other skills (composability)
+5. Never make up analysis - use the skill's methods and data
+
+"""
     
-    Skills are specialized capabilities stored in the '{skill_dir}' directory. 
-    When a user request matches a skill's purpose, you MUST automatically use that skill.
-    
-    ### Available skills (name: description)
-    {skill_descriptions}
-    
-    ### How to Use Skills
-    
-    **Automatic Skill Discovery**
-    When a user asks you to do something, FIRST check if any available skill matches their request. Then use that skill WITHOUT being explicitly told.
-    
-    **To use a skill:**
-    1. Use the 'read_file' tool to read its definition from '{skill_dir}/{{name}}/SKILL.md', e.g. read_file('{skill_dir}/watching-deals/SKILL.md')
-    2. Follow the detailed step-by-step instructions in the skill file
-    3. The skill may reference supporting files (scripts, benchmarks, templates) - read and use those as needed
-    4. Skills can invoke other skills (composability)
-    5. Never make up analysis - use the skill's methods and data
-    
-    **Examples:**
-    - User: "List phone deals" → Automatically use 'watching-deals' skill
-    
-    """
-    
-    return cleandoc(prompt)
+    return prompt
 
 # -------------------------------------------------------------
 # SkilledAgent
@@ -309,8 +289,5 @@ class SkilledAgent(Agent):
         base = super().generate_system_prompt()
         skill_addition = skill_prompt(self.skills, self.skill_dir)
         return f"{base}\n\n{skill_addition}"
-
-    def system_prompt_preamble(self):
-        return "You are an AI assistant with access to tools and skills. Always consult relevant skills before taking action."
 
 
