@@ -102,7 +102,11 @@ class Agent:
 
     def get_model_ctx_size(self):
         FALLBACK_CTX_SIZE = 4096
-        info = self.client.show(self.model).modelinfo
+        try:
+            info = self.client.show(self.model).modelinfo
+        except (ollama.ResponseError, ConnectionError) as e:
+            print(f"Warning: could not determine context size of '{self.model}' ({type(e).__name__}); using fallback {FALLBACK_CTX_SIZE} tokens")
+            return FALLBACK_CTX_SIZE
         res = [val for key, val in info.items() if key.endswith("context_length")] + [FALLBACK_CTX_SIZE]
         return res[0]
 
