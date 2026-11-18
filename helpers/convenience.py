@@ -95,11 +95,18 @@ class Agent:
         self.tools = tools or []
         self.known_tools = {tool.__name__: tool for tool in self.tools}
         self.client = ollama.Client(host=host, timeout=300)
+        # Sanity check
+        if not model in self.valid_models():
+            raise ValueError(f"Unknown model: '{model}'")
+
         self.ctx_size = min(self.get_model_ctx_size(), self.MAX_CTX_SIZE)
         
         system_message = self.generate_system_prompt()
         self.messages = [{"role":"system", "content": system_message}]
 
+    def valid_models(self):
+        return [m.model for m in self.client.list().models]
+        
     def get_model_ctx_size(self):
         FALLBACK_CTX_SIZE = 4096
         info = self.client.show(self.model).modelinfo
